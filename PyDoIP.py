@@ -5,7 +5,7 @@ import binascii
 #import keyboard
 
 import PyUDS
-import time
+import time,threading
 import platform
 # import argparse
 
@@ -71,7 +71,8 @@ payloadTypeDescription = {
 # to be changed later as an option in terminal
 #defaultTargetIPAddr = '127.0.0.1'
 defaultTargetIPAddr = '172.31.205.2'
-defaultTargetECUAddr = '0C02'
+#defaultTargetECUAddr = '0C02'
+
 
 def PadHexwithLead0s(hexStr):
     if isinstance (hexStr, str): # Make sure input argument is string
@@ -80,12 +81,15 @@ def PadHexwithLead0s(hexStr):
     return hexStr
 
 class DoIP_Client:
+    inputvalue=' ' # inputvalue in comd window
+    responsevalue=' '
+
     def __init__(self, address='0', port=0, ECUAddr='0E02'):
 
         # to do: need to add underscores for private properties...
         # init tcp socket
         self._localIPAddr = address
-        
+
         # Reason for the if statement is that self._TCP_Socket.bind() does not seem to work in Windows when address == '0'
         if "Window" in platform.platform(): # Checks if software is running in the Windows OS
         
@@ -131,7 +135,7 @@ class DoIP_Client:
     def __enter__(self):
         return self
 
-    def ConnectToDoIPServer(self, address=defaultTargetIPAddr, port=13400, routingActivation=False, targetECUAddr= '0C02'):
+    def ConnectToDoIPServer(self, address=defaultTargetIPAddr, port=13400, routingActivation=None, targetECUAddr=None):
         if self._isTCPConnected:
             print( "Error :: Already connected to a server. Close the connection before starting a new one\n")
         else:
@@ -223,6 +227,7 @@ class DoIP_Client:
                 if self._isVerbose:
                     print ("TCP RECV ::")
                 DoIPResponse = DoIPMsg(bytes.decode(activationResponse), self._isVerbose)  #zongliang comment change byte to str
+                #print(DoIPResponse.messageString)   #show to window
                 if DoIPResponse.payload[0:2] == '10':             #zongliang comment orignal is '10'
                     self._isRoutingActivated = True
                     self._targetECUAddr = DoIPResponse.targetAddress
@@ -253,7 +258,7 @@ class DoIP_Client:
                 payloadLength = "%.8X" % int(len(payload) / 2)
                 #print(payloadLength)
                 UDSString = DoIPHeader + payloadLength + payload
-                #print(UDSString)
+                self.inputvalue =UDSString.upper() #ZX
                 self._TxDoIPMsg.UpdateMsg(UDSString)
                 if logging == True:
                     if self._TxDoIPMsg.isUDS:
@@ -278,7 +283,9 @@ class DoIP_Client:
             try:
                 if self._isVerbose:
                     print( "TCP RECV ::")
-                self._RxDoIPMsg.UpdateMsg(bytes.decode(binascii.hexlify(self._TCP_Socket.recv(rxBufLen)).upper()), self._isVerbose)
+                responsevalue2 = bytes.decode(binascii.hexlify(self._TCP_Socket.recv(rxBufLen)).upper())
+                self._RxDoIPMsg.UpdateMsg(responsevalue2, self._isVerbose)
+                self.responsevalue = responsevalue2     #用于显示
                 if logging == True:
                     if self._RxDoIPMsg.isUDS:
                         self._logHndl.write('Server: ' + self._RxDoIPMsg.payload + '\n')
@@ -331,6 +338,14 @@ class DoIP_Client:
             
         componentID = PadHexwithLead0s(componentID)
         self._DoIPUDSSend(PyUDS.RC + PyUDS.STR + PyUDS.RC_CM + str(componentID) + CRCLen + CRC)
+        return self._DoIPUDSRecv()
+
+    def DoIPSecurityEntry(self,levelID):
+        self._DoIPUDSSend(PyUDS.SA + levelID)
+        return self._DoIPUDSRecv()
+
+    def DoIPTesterPresent(self):
+        self._DoIPUDSSend(PyUDS.TP + '00')
         return self._DoIPUDSRecv()
 
     def DoIPSwitchDiagnosticSession(self, sessionID=1):
