@@ -5,6 +5,7 @@ import binascii
 
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
+from PyQt5.QtCore import QTimer
 from Diagnostic_DownLoad import *
 import subprocess
 
@@ -34,8 +35,13 @@ def unlock_SecurityAccess(doip_client):
     #doip_client.send_diagnostic(b'\x27\x12\xc4\x4e\xeb\xe8')
     doip_client.send_diagnostic(request)
     print('unlock_SecurityAccess send ',request)
-    print('unlock_SecurityAccess recv ', doip_client.receive_diagnostic())
+    AccessResult=doip_client.receive_diagnostic()
+    print('unlock_SecurityAccess recv ', AccessResult)
+    return AccessResult
 
+def TesterPresent(doip_client):
+    doip_client.send_diagnostic(b'\x3E\x00')
+    print('TesterPresent recv ', doip_client.receive_diagnostic())
 
 def readMcuVIN(doip_client_mcu):
     data = bytearray(b'\x22\xCF\x4A') # 立时读did
@@ -62,18 +68,38 @@ class MyWindow(QMainWindow, Ui_MainWindow):
 
         self.selectECUname='0040'
 
+        #chatgpt 2023-7-31
+        # Create a QTimer instance
+        self.timer = QTimer(self)
+        # Set the interval in milliseconds (4 seconds in this case)
+        self.timer.setInterval(4000)  # 4000 milliseconds = 4 seconds
+        # Connect the timeout signal to the TesterPresent function
+        self.timer.timeout.connect(self.TesterPresent)
         #event
         self.pushButton_2.clicked.connect(self.checkconnectornot)  #连接
         self.pushButton_3.clicked.connect(self.closeit) #duankai
         #self.comboBox_3.currentIndexChanged.connect(self.selectecu_)  #输入
         self.pushButton_13.clicked.connect(self.sendreq_)             #发送
         #self.graphicsView.setBackgroundBrush(qcc.green(self))
-        #self.radioButton_3.clicked.connect(self.DoIPSwitchDiagnosticSession_)
-        #self.radioButton_2.clicked.connect(self.DoIPSA_)
-        #self.checkBox.stateChanged.connect(self.choose)
+        self.radioButton_3.clicked.connect(self.Extendedsection)  #Extended section
+        self.radioButton.clicked.connect(self.defaultsection)   #default section
+        self.checkBox.stateChanged.connect(self.toggle_timer)
         self.textEdit.moveCursor(self.textEdit.textCursor().End)
 
+        self.FuncOkorNOK_NOK()
+    def FuncOkorNOK_NOK(self):
+        self.checkBox.setEnabled(False)
         self.pushButton_13.setEnabled(False)
+        self.pushButton_2.setStyleSheet('''QPushButton{background:#FFFFC0;}''')
+        self.radioButton_3.setEnabled(False)
+        self.radioButton.setEnabled(False)
+        self.radioButton_2.setEnabled(False)
+    def FuncOkorNOK_OK(self):
+        self.pushButton_13.setEnabled(True)
+        self.pushButton_2.setStyleSheet('''QPushButton{background:#40FF80;}''')
+        self.checkBox.setEnabled(True)
+        self.radioButton_3.setEnabled(True)
+        self.radioButton.setEnabled(True)
     def checkconnectornot(self):
         if is_host_reachable(target_ecu_ip):
             self.createconnect()
@@ -82,12 +108,11 @@ class MyWindow(QMainWindow, Ui_MainWindow):
 
     def createconnect(self):
         self.doip_client_mcu = DoIPClient(target_ecu_ip, target_ecu_logical_address, protocol_version=0x03, client_logical_address=source_client_logical_address)
-        self.pushButton_13.setEnabled(True)
-        self.pushButton_2.setStyleSheet('''QPushButton{background:#40FF80;}''')
+        self.FuncOkorNOK_OK()
+
     def closeit(self):
         self.doip_client_mcu.close()
-        self.pushButton_13.setEnabled(False)
-        self.pushButton_2.setStyleSheet('''QPushButton{background:#FFFFC0;}''')
+        self.FuncOkorNOK_NOK()
 
     def selectecu_(self):
         if self.comboBox_3.currentText() == 'VDP':
@@ -98,15 +123,34 @@ class MyWindow(QMainWindow, Ui_MainWindow):
     def sendreq_(self):
         inputcmd = self.lineEdit.text()
         if inputcmd != '':
-            diddata = (binascii.a2b_hex(inputcmd))
-            self.doip_client_mcu.send_diagnostic(diddata)
-            print('读取 ' + 'DTC ' + 'VDP MCU 物流数据: ', str(binascii.hexlify(diddata)))
-            self.textEdit.append(binascii.hexlify(diddata).decode().upper())
+            reqdata = (binascii.a2b_hex(inputcmd))
+            self.doip_client_mcu.send_diagnostic(reqdata)
+            print('读取 ' + 'DTC ' + 'VDP MCU 物流数据: ', str(binascii.hexlify(reqdata)))
+            self.textEdit.append(binascii.hexlify(reqdata).decode().upper())
             response = self.doip_client_mcu.receive_diagnostic()
-            print('获得 ' + 'DTC ' + 'VDP MCU 物流数据: ',str((binascii.hexlify(response))))
-            self.textEdit.append((binascii.hexlify(response).decode().upper()))
+            print('获得 ' + 'DTC ' + 'VDP MCU 物流数据: ',str(binascii.hexlify(response)))
+            self.textEdit.append(binascii.hexlify(response).decode().upper())
             self.textEdit.append(str(response))
+    def Extendedsection(self):
+        self.textEdit.append("1003")
+        enterExtendSession(self.doip_client_mcu)
+        AccessresulttoTXT=unlock_SecurityAccess(self.doip_client_mcu)
+        self.textEdit.append(binascii.hexlify(AccessresulttoTXT).decode().upper())
 
+
+    def toggle_timer(self, state):
+        if state == 2:  # Qt.Checked
+        # Start the timer when the checkBox is checked
+            self.timer.start()
+        else:
+        # Stop the timer when the checkBox is unchecked
+            self.timer.stop()
+    def TesterPresent(self):
+        TesterPresent(self.doip_client_mcu)
+        self.textEdit.append("3E00")
+    def defaultsection(self):
+        self.textEdit.append("1001")
+        enterDefaultSession(self.doip_client_mcu)
 
 def is_host_reachable(ip_address):
     # 在Windows上使用"ping"命令
