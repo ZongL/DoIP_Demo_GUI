@@ -32,3 +32,16 @@ jobs:
         with:
           name: windows-Diagnostic_DownLoad
           path: Diagnostic_DownLoad.exe
+      
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Diagnostic Download v${{ github.run_number }}
+          tag_name: v${{ github.run_number }}
+          body: |
+            Automatic release of Diagnostic Download utility.
+            Build number: ${{ github.run_number }}
+          files: |
+            Diagnostic_DownLoad.exe
+          token: ${{ secrets.GITHUB_TOKEN }}
